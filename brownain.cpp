@@ -7,7 +7,11 @@ const int WINDOW_WIDTH = 800;
 const int WINDOW_HEIGHT = 600;
 const int NUM_PARTICLES = 100;
 const float STEP_SIZE = -1.0f; // Average step size
-const float VISCOSITY = 0.99f; // Dampening factor (optional)
+const float VISCOSITY = 0.99f; 
+
+const float GRAVITY = 9.8f; // Gravity constant
+
+// Dampening factor (optional)
 struct Particle {
   sf::CircleShape shape;
   sf::Vector2f velocity;
@@ -92,3 +96,5 @@ int main() {
 
   return 0;
 }
+
+
