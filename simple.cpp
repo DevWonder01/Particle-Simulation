@@ -6,21 +6,21 @@
 const int WINDOW_WIDTH = 800;
 const int WINDOW_HEIGHT = 600;
 const float VISCOSITY = 0.99f; // Dampening factor (optional)
-const int NUM_OF_BODIES = 500;
+const int NUM_OF_BODIES = 5;
 const float STEP_SIZE = -1.0f; // Average step size
 
 struct RigidBody
 {
-    sf::RectangleShape rectangle;
+    sf::CircleShape sphere;
     sf::Vector2f velocity;
     sf::Vector2f mass;
 
-    RigidBody(sf::Vector2f position, sf::Vector2f size, sf::Color color, sf::Vector2f _mass) : velocity(0.0f, 0.0f)
+    RigidBody(sf::Vector2f position, float radius, sf::Color color, sf::Vector2f _mass) : velocity(0.0f, 0.0f)
     {
-        rectangle.setSize(size);
-        rectangle.setFillColor(color);
-        rectangle.setPosition(position);
-        rectangle.setOrigin(size.x / 2, size.y / 2); // Set origin to center for easier rotation/scaling
+        sphere.setRadius(radius);
+        sphere.setFillColor(color);
+        sphere.setPosition(position);
+        sphere.setOrigin(radius, radius); // Set origin to center for easier rotation/scaling
         mass = _mass;
     }
 
@@ -29,28 +29,37 @@ struct RigidBody
         return sf::Vector2f(_mass.x * acceleration.x, _mass.y * acceleration.y);
     }
 
-
-    void update(float deltaTime) {
+    void update(float deltaTime)
+    {
         // Apply gravity
         const float GRAVITY = 2.0f; // Gravity constant
         velocity.y += GRAVITY * deltaTime;
 
-    
-        // Calculate force and move the rectangle
+        // Apply viscosity (optional)
+        // velocity *= VISCOSITY;
+
         sf::Vector2f appliedForce = force(mass, sf::Vector2f(0, GRAVITY));
-        rectangle.move(appliedForce * deltaTime);
-    
+        sphere.move(appliedForce * deltaTime);
+
         // Boundary conditions (simple wrapping)
-        sf::Vector2f position = rectangle.getPosition();
-    
+        sf::Vector2f position = sphere.getPosition();
+
         // Check for collision with the floor
-        if (position.y + rectangle.getSize().y / 2 >= WINDOW_HEIGHT) {
-            rectangle.setPosition(position.x, WINDOW_HEIGHT - rectangle.getSize().y / 2); // Set position to the floor
-            velocity.y = -velocity.y * 0.8f; // Reverse velocity and reduce it to simulate energy loss
+        if (position.y + sphere.getRadius() >= WINDOW_HEIGHT)
+        {
+            sphere.setPosition(position.x, WINDOW_HEIGHT - sphere.getRadius()); // Set position to the floor
+            velocity.y = -velocity.y * 0.8f;                                    // Reverse velocity and reduce it to simulate energy loss
         }
-    
-        if (position.x < rectangle.getSize().x / 2 >= WINDOW_WIDTH) {
-            rectangle.setPosition(WINDOW_WIDTH - rectangle.getSize().x / 2, position.y);
+
+        // Check for collision with the walls
+        if (position.x - sphere.getRadius() <= 0)
+        {
+            sphere.setPosition(sphere.getRadius(), position.y);
+            velocity.x = -velocity.x * 0.8f; // Reverse velocity and reduce it to simulate energy loss
+        }
+        if (position.x + sphere.getRadius() >= WINDOW_WIDTH)
+        {
+            sphere.setPosition(WINDOW_WIDTH - sphere.getRadius(), position.y);
             velocity.x = -velocity.x * 0.8f; // Reverse velocity and reduce it to simulate energy loss
         }
 
@@ -58,50 +67,123 @@ struct RigidBody
         std::cout << "Position: X = " << position.x << ", Y = " << position.y << std::endl;
     }
 
-    void draw(sf::RenderWindow &window)
+    void draw(sf::RenderWindow &window) const
     {
-        window.draw(rectangle);
+        window.draw(sphere);
     }
 };
+
+bool checkCollision(
+    RigidBody &body1,
+    RigidBody &body2)
+{
+    float dx = body1.sphere.getPosition().x - body2.sphere.getPosition().x;
+    float dy = body1.sphere.getPosition().y - body2.sphere.getPosition().y;
+
+    float distance = dx * dx * dy * dy;
+
+    float radiusTotal = body1.sphere.getRadius() + body2.sphere.getRadius();
+
+    return distance <= radiusTotal * radiusTotal * radiusTotal;
+};
+
+void resolveParticleCollision(
+    RigidBody &body1,
+    RigidBody &body2)
+{
+    float dx = body1.sphere.getPosition().x - body2.sphere.getPosition().x;
+    float dy = body1.sphere.getPosition().y - body2.sphere.getPosition().y;
+
+    float distance = dx * dx * dy * dy;
+
+    if (distance == 0.0)
+        return;
+
+    float normalX = dx / std::sqrt(distance);
+    float normaly = dy / std::sqrt(distance);
+
+    // relative velocity
+    float relVx = body1.velocity.x - body2.velocity.y;
+    float relVy = body1.velocity.x - body2.velocity.y;
+
+    float velAlongNormal = relVx * normalX + relVy * normaly;
+
+    if (velAlongNormal > 0)
+        return;
+
+    float restituion = 1.;
+
+    float j = -(1 + restituion) * velAlongNormal;
+
+    float impulseX = j * normalX;
+    float impluseY = j * normaly;
+
+    body1.velocity.x += impulseX / body1.mass.x;
+    body1.velocity.y += impluseY / body1.mass.y;
+    body2.velocity.x -= impulseX / body2.mass.x;
+    body2.velocity.y -= impluseY / body2.mass.y;
+
+    float penetration = (body1.sphere.getRadius() + body2.sphere.getRadius()) - std::sqrt(distance);
+
+    float k = 3.0f; // Penetration constant
+
+    float inverseMass1 = 1.0f / (body1.mass.x + body1.mass.y);
+    float inverseMass2 = 1.0f / (body2.mass.x + body2.mass.y);
+
+    float particleXcorrection = normalX * penetration * k / (inverseMass1 + inverseMass2);
+
+    float particleYcorrection = normalX * penetration * k / (inverseMass1 + inverseMass2);
+
+    body1.sphere.move(particleXcorrection * inverseMass1, particleYcorrection * inverseMass1);
+    body2.sphere.move(particleXcorrection * inverseMass1, particleYcorrection * inverseMass1);
+}
+
+void handleCollision(
+    std::vector<RigidBody>& bodies)
+{
+    for (int i = 0; i < NUM_OF_BODIES; ++i)
+    {
+        for (int j = 0; j < NUM_OF_BODIES; ++j)
+        {
+            if (checkCollision(bodies[i], bodies[j]))
+            {
+                resolveParticleCollision(bodies[i], bodies[2]);
+            }
+        }
+    }
+}
 
 int main()
 {
     sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "RigidBody Rendering");
-
 
     std::vector<RigidBody> bodies;
 
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    std::uniform_real_distribution<> distrib(-STEP_SIZE, STEP_SIZE);
-    std::uniform_int_distribution<> distrib_color(0, 255);
-    std::uniform_int_distribution<> distrib_x(0, WINDOW_WIDTH);
-    std::uniform_int_distribution<> distrib_y(0, WINDOW_HEIGHT);
+    std::uniform_real_distribution<> distrib_x(0, WINDOW_WIDTH);
+    std::uniform_real_distribution<> distrib_y(0, WINDOW_HEIGHT);
     std::uniform_real_distribution<> distrib_radius(20, 50);
-    std::uniform_real_distribution<> distrib_mass(1, 100);
-    std::uniform_real_distribution<> distrib_velocity(-1, 1);
+    std::uniform_real_distribution<> distrib_mass(1, 10);
+    std::uniform_int_distribution<> distrib_color(0, 255);
 
-
-    for (int x =0; x < NUM_OF_BODIES; ++x){
-        sf::Vector2f positon(distrib_x(gen), distrib_y(gen));  
-        float raduis = distrib_radius(gen);
+    // Initialize rigid bodies
+    for (int i = 0; i < NUM_OF_BODIES; ++i)
+    {
+        sf::Vector2f position(distrib_x(gen), distrib_y(gen));
+        float radius = distrib_radius(gen);
         sf::Color color(distrib_color(gen), distrib_color(gen), distrib_color(gen));
-        sf::Vector2f mass(distrib_mass(gen), distrib_mass(gen)); 
-        // sf::Vector2f velocity(distrib_velocity(gen), distrib_velocity(gen));
-        
-        sf::Vector2f size(raduis, raduis);
-        bodies.emplace_back(positon,size,color,mass);
+        sf::Vector2f mass(distrib_mass(gen), distrib_mass(gen));
 
+        bodies.emplace_back(position, radius, color, mass);
     }
-
 
     sf::Clock clock;
 
     while (window.isOpen())
     {
         sf::Event event;
-
         while (window.pollEvent(event))
         {
             if (event.type == sf::Event::Closed)
@@ -110,15 +192,23 @@ int main()
             }
         }
 
-
         float deltaTime = clock.restart().asSeconds();
+
         // Rendering logic
         window.clear(sf::Color::Black);
-        for (auto& body:bodies){
+        for (auto &body : bodies)
+        {
             body.update(deltaTime);
-            body.draw(window); // Render the rigid body
-
         }
+
+        // handleCollision(bodies);
+
+
+        for (auto &body : bodies)
+        {
+            body.draw(window);
+        }
+
         window.display();
     }
 
