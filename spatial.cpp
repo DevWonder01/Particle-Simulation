@@ -10,8 +10,6 @@ const int NUM_OF_BODIES = 500;
 const float STEP_SIZE = -1.0f; // Average step size
 
 
-
-
 struct RigidBody
 {
     sf::CircleShape sphere;
