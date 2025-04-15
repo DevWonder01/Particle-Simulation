@@ -32,7 +32,7 @@ struct RigidBody
     void update(float deltaTime)
     {
         // Apply gravity
-        const float GRAVITY = 2.0f; // Gravity constant
+        const float GRAVITY = 3.0f; // Gravity constant
         velocity.y += GRAVITY * deltaTime;
 
         // Apply viscosity (optional)
@@ -201,7 +201,7 @@ int main()
             body.update(deltaTime);
         }
 
-        // handleCollision(bodies);
+        handleCollision(bodies);
 
 
         for (auto &body : bodies)
